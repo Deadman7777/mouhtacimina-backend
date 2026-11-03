@@ -208,11 +208,25 @@ SPECTACULAR_SETTINGS = {
 }
 
 # ── Paytech ──────────────────────────────────────────────────
-import os
-PAYTECH_API_KEY    = os.environ.get('PAYTECH_API_KEY', '')
-PAYTECH_API_SECRET = os.environ.get('PAYTECH_API_SECRET', '')
-PAYTECH_ENV        = 'test'
-PAYTECH_IPN_URL    = os.environ.get('PAYTECH_IPN_URL', 'http://localhost:8000/api/payment/ipn/')
+# `config` (python-decouple) lit d'abord os.environ — les variables du
+# dashboard Render gardent donc la priorité — puis le fichier .env local.
+# Sans lui, les clés du .env n'étaient jamais chargées en développement et
+# Paytech répondait « Le vendeur n'existe pas ou clé api invalide ».
+from decouple import config
+PAYTECH_API_KEY    = config('PAYTECH_API_KEY', default='')
+PAYTECH_API_SECRET = config('PAYTECH_API_SECRET', default='')
+PAYTECH_ENV        = config('PAYTECH_ENV', default='test')
+PAYTECH_IPN_URL    = config(
+    'PAYTECH_IPN_URL',
+    default='https://mouhtacimina-api.onrender.com/api/payment/ipn/',
+)
 # URLs spéciales Flutter — ne pas changer
 PAYTECH_SUCCESS_URL = 'https://paytech.sn/mobile/success'
 PAYTECH_CANCEL_URL  = 'https://paytech.sn/mobile/cancel'
+
+# ── Client web ───────────────────────────────────────────────
+# URL publique du front Next.js. Les paiements lancés depuis le navigateur
+# (plateforme='web') y reviennent au lieu des deeplinks mobiles ci-dessus.
+WEB_BASE_URL = config('WEB_BASE_URL', default='http://localhost:3000').rstrip('/')
+PAYTECH_WEB_SUCCESS_URL = f'{WEB_BASE_URL}/paiement/succes'
+PAYTECH_WEB_CANCEL_URL  = f'{WEB_BASE_URL}/paiement/annule'

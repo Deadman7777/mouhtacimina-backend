@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from .models import Evenement, Participation, LigneBudget
+from .public_serializers import EvenementPublicListSerializer
 from accounts.serializers import MembreListSerializer
 
 
@@ -28,6 +29,19 @@ class ParticipationSerializer(serializers.ModelSerializer):
         model  = Participation
         fields = ['id', 'membre', 'membre_info', 'evenement', 'statut', 'date_inscription', 'note']
         read_only_fields = ['date_inscription']
+
+
+class MaParticipationSerializer(serializers.ModelSerializer):
+    """Mes inscriptions, avec juste ce qu'il faut de l'événement pour l'afficher."""
+    evenement_info = EvenementPublicListSerializer(source='evenement', read_only=True)
+    statut_display = serializers.CharField(source='get_statut_display', read_only=True)
+
+    class Meta:
+        model  = Participation
+        fields = [
+            'id', 'evenement', 'evenement_info',
+            'statut', 'statut_display', 'date_inscription',
+        ]
 
 
 class EvenementListSerializer(serializers.ModelSerializer):

@@ -9,9 +9,10 @@ from django_filters.rest_framework import DjangoFilterBackend
 from .models import User, Cellule
 from .serializers import (
     CelluleSerializer, MembreListSerializer, MembreDetailSerializer,
-    InscriptionSerializer, ChangerMotDePasseSerializer, TokenAvecInfosSerializer
+    MonProfilSerializer, InscriptionSerializer, ChangerMotDePasseSerializer,
+    TokenAvecInfosSerializer, AdminMembreSerializer
 )
-from .permissions import IsSuperAdmin, IsAdminCellule, IsAdminOrReadOnly
+from .permissions import IsSuperAdmin, IsAdminCellule, IsAdminOrReadOnly, IsAdmin
 
 
 class LoginView(TokenObtainPairView):
@@ -57,16 +58,54 @@ class MembreViewSet(viewsets.ModelViewSet):
             return MembreListSerializer
         if self.action == 'create':
             return InscriptionSerializer
+        if self.action in ['update', 'partial_update']:
+            return AdminMembreSerializer
         return MembreDetailSerializer
 
     def get_permissions(self):
         if self.action == 'list':
             return [IsAdminCellule()]
         if self.action == 'create':
-            return [IsAdminCellule()]
+            return [IsAdmin()]
         if self.action in ['destroy']:
             return [IsSuperAdmin()]
-        return [IsAuthenticated()]
+        # Modifier la fiche d'un AUTRE membre est un acte d'administration :
+        # sans ce garde-fou, tout membre pouvait éditer (rôle compris) n'importe
+        # quel membre actif de sa cellule, que get_queryset lui laisse voir.
+        # L'édition de son propre profil passe par l'action `moi`.
+        # Le bureau consulte (list), seuls les admins modifient : c'est la
+        # répartition de l'app mobile, et AdminMembreSerializer verrouille
+        # en plus le rôle au seul super admin.
+        if self.action in ['update', 'partial_update']:
+            return [IsAdmin()]
+        # Pour les actions personnalisées, appliquer leur propre
+        # `permission_classes`. Renvoyer IsAuthenticated ici (comme avant)
+        # neutralisait ces décorateurs : n'importe quel membre pouvait
+        # activer/désactiver ou migrer un autre membre de sa cellule.
+        return super().get_permissions()
+
+    def create(self, request, *args, **kwargs):
+        """
+        POST /api/auth/membres/ — Ajout d'un membre par un admin.
+        Un admin cellule ne peut ajouter que dans sa propre cellule.
+        Renvoie la fiche complète (avec l'id), pas l'écho du formulaire.
+        """
+        serializer = InscriptionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        extra = {}
+        if request.user.role == User.Role.ADMIN_CELLULE:
+            extra['cellule'] = request.user.cellule
+        membre = serializer.save(**extra)
+        # Comme pour un passage officiel via PATCH : la dette se calcule
+        # depuis l'engagement, qu'on date donc du jour de l'ajout.
+        if membre.est_officiel and not membre.date_signature_engagement:
+            membre.date_signature_engagement = timezone.now().date()
+            membre.date_officialisation = membre.date_officialisation or timezone.now().date()
+            membre.save(update_fields=['date_signature_engagement', 'date_officialisation'])
+        return Response(
+            MembreDetailSerializer(membre, context={'request': request}).data,
+            status=status.HTTP_201_CREATED,
+        )
 
     @action(detail=False, methods=['get', 'patch'], url_path='moi')
     def moi(self, request):
@@ -74,7 +113,9 @@ class MembreViewSet(viewsets.ModelViewSet):
         if request.method == 'GET':
             return Response(MembreDetailSerializer(request.user).data)
 
-        serializer = MembreDetailSerializer(
+        # MonProfilSerializer, pas MembreDetailSerializer : il verrouille
+        # role / cellule / type_membre / bureau contre l'auto-promotion.
+        serializer = MonProfilSerializer(
             request.user, data=request.data, partial=True
         )
         serializer.is_valid(raise_exception=True)
@@ -111,7 +152,7 @@ class MembreViewSet(viewsets.ModelViewSet):
         )
 
     @action(detail=True, methods=['post'],
-            permission_classes=[IsAdminCellule], url_path='activer')
+            permission_classes=[IsAdmin], url_path='activer')
     def activer(self, request, pk=None):
         """Activer / désactiver un membre."""
         membre = self.get_object()
@@ -121,7 +162,7 @@ class MembreViewSet(viewsets.ModelViewSet):
         return Response({'message': f"Membre {etat}."})
 
     @action(detail=True, methods=['post'],
-            permission_classes=[IsAdminCellule], url_path='migrer_cellule')
+            permission_classes=[IsAdmin], url_path='migrer_cellule')
     def migrer_cellule(self, request, pk=None):
         """
         Migre un membre vers une nouvelle cellule.

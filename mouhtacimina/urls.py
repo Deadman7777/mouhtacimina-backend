@@ -8,6 +8,9 @@ from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 urlpatterns = [
     path('admin/', admin.site.urls),
 
+    # Vitrine publique (visiteurs non connectés)
+    path('api/public/',      include('evenements.public_urls')),
+
     # Auth & membres
     path('api/auth/',        include('accounts.urls')),
 

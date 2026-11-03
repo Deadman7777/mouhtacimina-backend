@@ -15,13 +15,24 @@ class PaytechService:
         custom_field=None,
         payment_method='Wave, Orange Money, Free Money',
         membre=None,
+        success_url=None,
+        cancel_url=None,
     ):
         """
         Crée une demande de paiement Paytech.
         Retourne le redirect_url ou None en cas d'erreur.
+
+        success_url / cancel_url : laisser à None pour les deeplinks mobiles
+        des settings (comportement Flutter historique). Le client web passe
+        ses propres URLs pour ramener le navigateur sur le site.
         """
         if custom_field is None:
             custom_field = {}
+
+        if success_url is None:
+            success_url = settings.PAYTECH_SUCCESS_URL
+        if cancel_url is None:
+            cancel_url = settings.PAYTECH_CANCEL_URL
 
         url = f'{PaytechService.BASE_URL}/payment/request-payment'
 
@@ -33,8 +44,8 @@ class PaytechService:
             'command_name': f'Paiement {item_name} — Mouhtacimina',
             'env':          settings.PAYTECH_ENV,
             'target_payment': payment_method,
-            'success_url':  settings.PAYTECH_SUCCESS_URL,
-            'cancel_url':   settings.PAYTECH_CANCEL_URL,
+            'success_url':  success_url,
+            'cancel_url':   cancel_url,
             'ipn_url':      settings.PAYTECH_IPN_URL,
             'custom_field': json.dumps(custom_field),
         }

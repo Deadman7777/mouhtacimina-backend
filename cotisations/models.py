@@ -31,6 +31,15 @@ class Cotisation(models.Model):
         null=True, blank=True, related_name='cotisations'
     )
 
+    # Événement financé par cette campagne (pour type_cotisation='evenement').
+    # Permet au client web de proposer « participer puis payer » sur la même
+    # page d'événement. null = campagne non rattachée à un événement.
+    evenement        = models.ForeignKey(
+        'evenements.Evenement', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='cotisations',
+        help_text="Événement concerné (pour une cotisation de type événement)"
+    )
+
     montant_suggere  = models.DecimalField(
         max_digits=10, decimal_places=2,
         null=True, blank=True,

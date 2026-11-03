@@ -21,7 +21,11 @@ class PaiementSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             'date_paiement', 'date_validation',
-            'valide_par', 'statut', 'reduction_appliquee'
+            'valide_par', 'statut', 'reduction_appliquee',
+            # Toujours déduit du token (cf. create) : sans ce read_only, DRF
+            # l'exigeait dans le corps de la requête et /payer/ renvoyait
+            # systématiquement 400 {"membre": ["This field is required."]}.
+            'membre',
         ]
 
     def create(self, validated_data):
@@ -41,6 +45,7 @@ class CotisationListSerializer(serializers.ModelSerializer):
     total_collecte           = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
     nb_paiements             = serializers.IntegerField(source='nb_paiements_valides', read_only=True)
     nb_en_attente            = serializers.IntegerField(read_only=True)
+    evenement_titre          = serializers.CharField(source='evenement.titre', read_only=True)
     # Montant personnalisé selon le membre connecté
     montant_pour_moi         = serializers.SerializerMethodField()
 
@@ -48,7 +53,7 @@ class CotisationListSerializer(serializers.ModelSerializer):
         model  = Cotisation
         fields = [
             'id', 'titre', 'type_cotisation', 'type_cotisation_display',
-            'cellule', 'cellule_nom',
+            'cellule', 'cellule_nom', 'evenement', 'evenement_titre',
             'montant_suggere', 'reduction_membres_officiels', 'montant_pour_moi',
             'periodicite', 'periodicite_display',
             'date_limite', 'est_active', 'mois_concerne',

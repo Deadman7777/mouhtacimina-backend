@@ -40,3 +40,15 @@ class IsMembresMemeCellule(BasePermission):
         if request.user.role in ['super_admin', 'admin_cellule']:
             return True
         return obj.cellule == request.user.cellule
+
+
+class IsAdmin(BasePermission):
+    """
+    Super admin ou admin cellule uniquement — sans le bureau.
+    Pour les actes qui touchent la fiche d'un autre membre (ajout, statut,
+    activation, migration) : l'app mobile ne les propose qu'aux admins.
+    """
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and request.user.role in [
+            'super_admin', 'admin_cellule'
+        ]

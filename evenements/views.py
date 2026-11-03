@@ -9,7 +9,8 @@ from django_filters.rest_framework import DjangoFilterBackend
 from .models import Evenement, Participation, LigneBudget
 from .serializers import (
     EvenementListSerializer, EvenementDetailSerializer,
-    ParticipationSerializer, LigneBudgetSerializer, BilanSerializer
+    ParticipationSerializer, LigneBudgetSerializer, BilanSerializer,
+    MaParticipationSerializer
 )
 from accounts.permissions import IsAdminOrReadOnly, IsAdminCellule
 
@@ -129,6 +130,15 @@ class EvenementViewSet(viewsets.ModelViewSet):
             ParticipationSerializer(participation).data,
             status=status.HTTP_201_CREATED
         )
+
+    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated],
+            url_path='mes-participations')
+    def mes_participations(self, request):
+        """GET /api/evenements/mes-participations/ — Les événements où je suis inscrit."""
+        qs = Participation.objects.filter(membre=request.user) \
+                                  .select_related('evenement', 'evenement__cellule') \
+                                  .order_by('-evenement__date_debut')
+        return Response(MaParticipationSerializer(qs, many=True).data)
 
     @action(detail=True, methods=['get'], permission_classes=[IsAdminCellule])
     def participants(self, request, pk=None):

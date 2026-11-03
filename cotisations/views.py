@@ -25,13 +25,14 @@ class CotisationViewSet(viewsets.ModelViewSet):
     GET    /api/cotisations/mes-paiements/           — Mes paiements
     """
     filter_backends    = [DjangoFilterBackend, filters.SearchFilter]
-    filterset_fields   = ['est_active', 'periodicite', 'cellule']
+    filterset_fields   = ['est_active', 'periodicite', 'cellule',
+                          'type_cotisation', 'evenement']
     search_fields      = ['titre']
     permission_classes = [IsAdminOrReadOnly]
 
     def get_queryset(self):
         user = self.request.user
-        qs   = Cotisation.objects.select_related('cellule', 'cree_par') \
+        qs   = Cotisation.objects.select_related('cellule', 'cree_par', 'evenement') \
                                  .prefetch_related('paiements')
 
         if user.role == 'super_admin':
@@ -176,6 +177,7 @@ class PaiementAdminViewSet(viewsets.ReadOnlyModelViewSet):
 # ── Paytech ──────────────────────────────────────────────────
 import uuid
 import json
+from django.conf import settings
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
@@ -188,13 +190,42 @@ from rest_framework.decorators import permission_classes as pc
 from .paytech_service import PaytechService
 
 
+# Libellé Paytech → choix Moyen du modèle. Sans cette table, 'Orange Money'
+# était enregistré 'orange' et 'Free Money' 'free', deux valeurs absentes des
+# choix (Django ne valide pas les choices sur save, l'erreur passait donc
+# inaperçue jusqu'à l'affichage).
+MOYENS_PAYTECH = {
+    'wave':         Paiement.Moyen.WAVE,
+    'orange money': Paiement.Moyen.ORANGE_MONEY,
+    'orange_money': Paiement.Moyen.ORANGE_MONEY,
+    'free money':   Paiement.Moyen.FREE_MONEY,
+    'free_money':   Paiement.Moyen.FREE_MONEY,
+}
+
+
+def _moyen_vers_choix(libelle, defaut=Paiement.Moyen.WAVE):
+    """
+    Convertit un libellé Paytech en valeur de Paiement.Moyen.
+    Un libellé multiple ('Wave, Orange Money, ...') signifie que le membre
+    n'a pas encore choisi : on retient `defaut`, corrigé ensuite par l'IPN
+    qui nous renvoie le moyen réellement utilisé.
+    """
+    if not libelle or ',' in libelle:
+        return defaut
+    return MOYENS_PAYTECH.get(libelle.strip().lower(), defaut)
+
+
 @api_view(['POST'])
 @pc([IsAuthenticated])
 def initier_paiement_paytech(request, cotisation_id):
     """
     POST /api/cotisations/{id}/payer-paytech/
     Initie un paiement Paytech pour une cotisation.
-    Body: { "moyen": "Wave" | "Orange Money" | "Free Money" }
+    Body: {
+        "moyen":      "Wave" | "Orange Money" | "Free Money",
+        "montant":    optionnel (régularisation partielle),
+        "plateforme": "mobile" (défaut, deeplinks Flutter) | "web"
+    }
     """
     try:
         cotisation = Cotisation.objects.get(id=cotisation_id)
@@ -215,7 +246,18 @@ def initier_paiement_paytech(request, cotisation_id):
     montant_recu    = request.data.get('montant')
 
     if montant_recu:
-        montant = float(montant_recu)
+        try:
+            montant = float(montant_recu)
+        except (TypeError, ValueError):
+            return Response(
+                {'error': 'Montant invalide.'},
+                status=drf_status.HTTP_400_BAD_REQUEST
+            )
+        if montant <= 0:
+            return Response(
+                {'error': 'Le montant doit être supérieur à zéro.'},
+                status=drf_status.HTTP_400_BAD_REQUEST
+            )
     elif montant_suggere is not None:
         montant = montant_suggere
     else:
@@ -227,13 +269,21 @@ def initier_paiement_paytech(request, cotisation_id):
     # Référence unique
     ref = f'MOUHTA-{cotisation_id}-{membre.id}-{uuid.uuid4().hex[:8].upper()}'
 
+    # Où Paytech renvoie l'utilisateur une fois le paiement terminé.
+    # Le mobile garde ses deeplinks, le web revient sur le site.
+    if str(request.data.get('plateforme', 'mobile')).lower() == 'web':
+        success_url = f'{settings.PAYTECH_WEB_SUCCESS_URL}?ref={ref}'
+        cancel_url  = f'{settings.PAYTECH_WEB_CANCEL_URL}?ref={ref}'
+    else:
+        success_url = settings.PAYTECH_SUCCESS_URL
+        cancel_url  = settings.PAYTECH_CANCEL_URL
+
     # Créer le paiement en base (statut en_attente)
     paiement = Paiement.objects.create(
         cotisation=cotisation,
         membre=membre,
         montant=montant,
-        moyen=moyen.lower().replace(' ', '_').replace(',', '').split('_')[0]
-              if ',' not in moyen else 'wave',
+        moyen=_moyen_vers_choix(moyen),
         statut='en_attente',
         reference_transaction=ref,
         reduction_appliquee=cotisation.reduction_membres_officiels
@@ -255,6 +305,8 @@ def initier_paiement_paytech(request, cotisation_id):
         custom_field  = custom_field,
         payment_method= moyen,
         membre        = membre,
+        success_url   = success_url,
+        cancel_url    = cancel_url,
     )
 
     if result.get('success') == 1:
@@ -303,6 +355,7 @@ def paytech_ipn(request):
             )
             paiement.statut          = 'valide'
             paiement.date_validation = timezone.now()
+            paiement.moyen           = _moyen_vers_choix(payment_method, paiement.moyen)
             paiement.note            = f'Validé automatiquement via Paytech ({payment_method})'
             paiement.save()
 
@@ -312,6 +365,7 @@ def paytech_ipn(request):
                 paiement = Paiement.objects.get(reference_transaction=ref_command)
                 paiement.statut          = 'valide'
                 paiement.date_validation = timezone.now()
+                paiement.moyen           = _moyen_vers_choix(payment_method, paiement.moyen)
                 paiement.save()
             except Paiement.DoesNotExist:
                 pass

@@ -21,11 +21,11 @@ class ConfigAdmin(admin.ModelAdmin):
 @admin.register(Cotisation)
 class CotisationAdmin(admin.ModelAdmin):
     list_display  = [
-        'titre', 'type_cotisation', 'cellule',
+        'titre', 'type_cotisation', 'cellule', 'evenement',
         'montant_suggere', 'reduction_membres_officiels',
         'est_active', 'total_collecte', 'nb_en_attente'
     ]
-    list_filter   = ['type_cotisation', 'est_active', 'cellule']
+    list_filter   = ['type_cotisation', 'est_active', 'cellule', 'evenement']
     inlines       = [PaiementInline]
 
 
