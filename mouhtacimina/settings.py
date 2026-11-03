@@ -192,8 +192,6 @@ SIMPLE_JWT = {
     'REFRESH_TOKEN_LIFETIME': timedelta(days=30),
 }
 
-# ── CORS ─────────────────────────────────────────────────────
-CORS_ALLOW_ALL_ORIGINS = True  # Mettre False en production
 
 # ── MEDIA ────────────────────────────────────────────────────
 import os
@@ -230,3 +228,15 @@ PAYTECH_CANCEL_URL  = 'https://paytech.sn/mobile/cancel'
 WEB_BASE_URL = config('WEB_BASE_URL', default='http://localhost:3000').rstrip('/')
 PAYTECH_WEB_SUCCESS_URL = f'{WEB_BASE_URL}/paiement/succes'
 PAYTECH_WEB_CANCEL_URL  = f'{WEB_BASE_URL}/paiement/annule'
+
+# ── CORS ─────────────────────────────────────────────────────
+# Seuls les navigateurs appliquent le CORS : l'app Flutter (Android / iOS)
+# n'envoie pas d'en-tête Origin et n'est donc pas concernée. On n'autorise
+# que le site web (WEB_BASE_URL), plus d'éventuelles origines en plus
+# (CORS_EXTRA_ORIGINS, séparées par des virgules : nom de domaine, etc.).
+CORS_ALLOWED_ORIGINS = sorted({
+    WEB_BASE_URL,
+    *[o.strip().rstrip('/') for o in config('CORS_EXTRA_ORIGINS', default='').split(',') if o.strip()],
+    # Développement local du site Next.js
+    *(['http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:3123'] if DEBUG else []),
+})
